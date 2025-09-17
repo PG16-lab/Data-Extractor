@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Extractor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="w-full max-w-3xl bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-10 flex flex-col items-center space-y-8">
+
+        <!-- Title -->
+        <div class="text-center space-y-2">
+            <h1 class="text-3xl md:text-4xl font-extrabold text-blue-400">Data Extractor</h1>
+            <p class="text-gray-400 text-lg">Upload an Excel or CSV file to extract data based on a keyword.</p>
+        </div>
+
+        <!-- File Upload Area -->
+        <div id="file-upload-area" class="w-full border-2 border-dashed border-gray-600 rounded-lg p-6 text-center cursor-pointer transition-colors duration-200 hover:border-blue-500">
+            <input type="file" id="file-upload" class="hidden" accept=".csv, .xls, .xlsx">
+            <p class="text-gray-500">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12 mx-auto mb-2 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span class="font-semibold text-gray-300">Click to upload</span> or drag and drop
+            </p>
+            <p id="file-name" class="mt-2 text-sm text-gray-400"></p>
+        </div>
+
+        <!-- Input Section -->
+        <div class="w-full space-y-4">
+            <input type="text" id="keyword-input" placeholder="Enter keyword to search (e.g., 'Name')" class="w-full p-3 bg-gray-900 text-gray-200 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled>
+            
+            <div class="flex flex-col md:flex-row md:space-x-4 space-y-4 md:space-y-0">
+                <div class="flex items-center space-x-2">
+                    <input type="radio" id="extract-row" name="extraction-type" value="row" class="text-blue-500" disabled>
+                    <label for="extract-row" class="text-gray-300">Extract by Row (Find Keyword)</label>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="radio" id="extract-column" name="extraction-type" value="column" class="text-blue-500" disabled>
+                    <label for="extract-column" class="text-gray-300">Extract by Column (Find Keyword)</label>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <input type="radio" id="extract-numbers" name="extraction-type" value="numbers" class="text-blue-500" disabled>
+                    <label for="extract-numbers" class="text-gray-300">Extract Only Numbers</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Buttons -->
+        <div class="w-full flex flex-col md:flex-row md:space-x-4 space-y-4 md:space-y-0">
+            <button id="extract-btn" class="w-full md:w-1/2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-800" disabled>
+                Extract Data
+            </button>
+            <button id="download-btn" class="w-full md:w-1/2 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg shadow-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 focus:ring-offset-gray-800" disabled>
+                Download CSV
+            </button>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="hidden flex justify-center items-center">
+            <div class="loading-spinner"></div>
+            <p class="ml-4 text-lg text-gray-400">Processing file...</p>
+        </div>
+
+        <!-- Output Area -->
+        <div id="output-area" class="w-full hidden">
+            <h2 class="text-xl font-bold text-gray-300 mb-2">Extracted Data:</h2>
+            <textarea id="output-data" class="w-full h-64 p-4 bg-gray-900 text-gray-200 rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" readonly></textarea>
+        </div>
+    </div>
+
+    <script>
+        const fileUpload = document.getElementById('file-upload');
+        const fileUploadArea = document.getElementById('file-upload-area');
+        const fileNameEl = document.getElementById('file-name');
+        const keywordInput = document.getElementById('keyword-input');
+        const extractRow = document.getElementById('extract-row');
+        const extractColumn = document.getElementById('extract-column');
+        const extractNumbers = document.getElementById('extract-numbers');
+        const extractBtn = document.getElementById('extract-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const outputArea = document.getElementById('output-area');
+        const outputData = document.getElementById('output-data');
+
+        let uploadedFile = null;
+        let fileType = null;
+        let dataRows = [];
+
+        const disableControls = (disabled) => {
+            keywordInput.disabled = disabled;
+            extractRow.disabled = disabled;
+            extractColumn.disabled = disabled;
+            extractNumbers.disabled = disabled;
+            extractBtn.disabled = disabled;
+        };
+
+        const resetUI = () => {
+            disableControls(true);
+            extractBtn.disabled = true;
+            downloadBtn.disabled = true;
+            outputArea.classList.add('hidden');
+            outputData.value = '';
+        };
+
+        fileUploadArea.addEventListener('click', () => {
+            fileUpload.click();
+        });
+
+        fileUpload.addEventListener('change', (e) => {
+            uploadedFile = e.target.files[0];
+            if (uploadedFile) {
+                fileNameEl.textContent = uploadedFile.name;
+                resetUI();
+                fileType = uploadedFile.name.split('.').pop().toLowerCase();
+                disableControls(false);
+            } else {
+                fileNameEl.textContent = '';
+                resetUI();
+            }
+        });
+
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('border-blue-500');
+        });
+
+        fileUploadArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('border-blue-500');
+        });
+
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('border-blue-500');
+            fileUpload.files = e.dataTransfer.files;
+            fileUpload.dispatchEvent(new Event('change'));
+        });
+        
+        const updateExtractButtonState = () => {
+            const hasKeyword = keywordInput.value.trim() !== '';
+            const isRowOrColumnSelected = extractRow.checked || extractColumn.checked;
+            const isNumbersSelected = extractNumbers.checked;
+
+            if ((isRowOrColumnSelected && hasKeyword) || isNumbersSelected) {
+                extractBtn.disabled = false;
+            } else {
+                extractBtn.disabled = true;
+            }
+
+            // Enable/disable keyword input based on selection
+            keywordInput.disabled = isNumbersSelected;
+        };
+
+        keywordInput.addEventListener('input', updateExtractButtonState);
+        extractRow.addEventListener('change', updateExtractButtonState);
+        extractColumn.addEventListener('change', updateExtractButtonState);
+        extractNumbers.addEventListener('change', updateExtractButtonState);
+
+        extractBtn.addEventListener('click', async () => {
+            if (!uploadedFile) return;
+
+            loadingIndicator.classList.remove('hidden');
+            outputArea.classList.add('hidden');
+            downloadBtn.disabled = true;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const data = e.target.result;
+                let extractedData = [];
+                let keyword = keywordInput.value.trim();
+                const extractionType = document.querySelector('input[name="extraction-type"]:checked').value;
+
+                try {
+                    if (fileType === 'csv') {
+                        const parsed = Papa.parse(data, { header: false });
+                        dataRows = parsed.data;
+                    } else if (fileType === 'xls' || fileType === 'xlsx') {
+                        const workbook = XLSX.read(data, { type: 'binary' });
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        dataRows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+                    }
+                    
+                    if (extractionType === 'row') {
+                        dataRows.forEach(row => {
+                            if (row.some(cell => String(cell).includes(keyword))) {
+                                extractedData.push(row);
+                            }
+                        });
+                    } else if (extractionType === 'column') {
+                        let keywordColIndex = -1;
+                        for (let i = 0; i < dataRows.length; i++) {
+                            const foundIndex = dataRows[i].findIndex(cell => String(cell).includes(keyword));
+                            if (foundIndex !== -1) {
+                                keywordColIndex = foundIndex;
+                                break;
+                            }
+                        }
+                        
+                        if (keywordColIndex !== -1) {
+                            extractedData = dataRows.map(row => [row[keywordColIndex]]);
+                        } else {
+                            outputData.value = "Keyword not found in any cell.";
+                            loadingIndicator.classList.add('hidden');
+                            return;
+                        }
+                    } else if (extractionType === 'numbers') {
+                        dataRows.forEach(row => {
+                            row.forEach(cell => {
+                                // Check if cell is a valid number
+                                const value = String(cell).trim();
+                                if (value !== '' && !isNaN(Number(value))) {
+                                    extractedData.push([value]);
+                                }
+                            });
+                        });
+                    }
+
+                    if (extractedData.length > 0) {
+                        outputData.value = extractedData.map(row => row.join(',')).join('\n');
+                        outputArea.classList.remove('hidden');
+                        downloadBtn.disabled = false;
+                    } else {
+                        outputData.value = "No data found for the given criteria.";
+                        outputArea.classList.remove('hidden');
+                    }
+
+                } catch (err) {
+                    console.error("Error processing file:", err);
+                    outputData.value = "Error processing the file. Please ensure it's a valid CSV or Excel file.";
+                    outputArea.classList.remove('hidden');
+                } finally {
+                    loadingIndicator.classList.add('hidden');
+                }
+            };
+
+            if (uploadedFile) {
+                if (fileType === 'csv') {
+                    reader.readAsText(uploadedFile);
+                } else if (fileType === 'xls' || fileType === 'xlsx') {
+                    reader.readAsBinaryString(uploadedFile);
+                }
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const extractedText = outputData.value;
+            const blob = new Blob([extractedText], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'extracted_data.csv');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    </script>
+</body>
+</html>
